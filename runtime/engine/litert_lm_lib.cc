@@ -706,8 +706,11 @@ absl::Status BuildContentList(const std::vector<InputData>& input_data,
       ASSIGN_OR_RETURN(auto raw_bytes, image->GetRawImageBytes());
       content_list.push_back(
           {{"type", "image"}, {"blob", absl::Base64Escape(raw_bytes)}});
+    } else if (const auto* audio = std::get_if<InputAudio>(&data)) {
+      ASSIGN_OR_RETURN(auto raw_bytes, audio->GetRawAudioBytes());
+      content_list.push_back(
+          {{"type", "audio"}, {"blob", absl::Base64Escape(raw_bytes)}});
     }
-    // TODO(b/453071109): Add support for audio.
   }
 
   return absl::OkStatus();

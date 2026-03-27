@@ -115,6 +115,30 @@ TEST(BuildContentListTest, ImageDataSuccess) {
   EXPECT_EQ(content_list[4]["text"], ".");
 }
 
+TEST(BuildContentListTest, AudioDataSuccess) {
+  LiteRtLmSettings settings;
+  json content_list = json::array();
+  std::vector<std::string> audios = {"audio_blob_1", "audio_blob_2"};
+
+  std::vector<InputData> input_data;
+  input_data.push_back(InputText("Audio 1: "));
+  input_data.push_back(InputAudio(audios[0]));
+  input_data.push_back(InputText(", Audio 2: "));
+  input_data.push_back(InputAudio(audios[1]));
+  input_data.push_back(InputText("."));
+
+  EXPECT_OK(BuildContentList(input_data, settings, content_list));
+
+  ASSERT_EQ(content_list.size(), 5);
+  EXPECT_EQ(content_list[0]["text"], "Audio 1: ");
+  EXPECT_EQ(content_list[1]["type"], "audio");
+  EXPECT_EQ(content_list[1]["blob"], absl::Base64Escape("audio_blob_1"));
+  EXPECT_EQ(content_list[2]["text"], ", Audio 2: ");
+  EXPECT_EQ(content_list[3]["type"], "audio");
+  EXPECT_EQ(content_list[3]["blob"], absl::Base64Escape("audio_blob_2"));
+  EXPECT_EQ(content_list[4]["text"], ".");
+}
+
 TEST(BuildContentListTest, MixedModality) {
   const std::string temp_dir = testing::TempDir();
   const std::string audio_path = temp_dir + "/test_audio.wav";
@@ -124,23 +148,29 @@ TEST(BuildContentListTest, MixedModality) {
   settings.audio_backend = "cpu";
   json content_list = json::array();
   std::vector<std::string> images = {"image_blob_1"};
+  std::vector<std::string> audios = {"audio_blob_1"};
 
   std::string prompt =
       absl::StrCat("Listen to [audio:", audio_path, "] and look at ");
   std::vector<InputData> input_data;
   input_data.push_back(InputText(prompt));
   input_data.push_back(InputImage(images[0]));
+  input_data.push_back(InputText(" and listen to "));
+  input_data.push_back(InputAudio(audios[0]));
   input_data.push_back(InputText("."));
   EXPECT_OK(BuildContentList(input_data, settings, content_list));
 
-  ASSERT_EQ(content_list.size(), 5);
+  ASSERT_EQ(content_list.size(), 7);
   EXPECT_EQ(content_list[0]["text"], "Listen to ");
   EXPECT_EQ(content_list[1]["type"], "audio");
   EXPECT_EQ(content_list[1]["path"], audio_path);
   EXPECT_EQ(content_list[2]["text"], " and look at ");
   EXPECT_EQ(content_list[3]["type"], "image");
   EXPECT_EQ(content_list[3]["blob"], absl::Base64Escape("image_blob_1"));
-  EXPECT_EQ(content_list[4]["text"], ".");
+  EXPECT_EQ(content_list[4]["text"], " and listen to ");
+  EXPECT_EQ(content_list[5]["type"], "audio");
+  EXPECT_EQ(content_list[5]["blob"], absl::Base64Escape("audio_blob_1"));
+  EXPECT_EQ(content_list[6]["text"], ".");
 }
 
 TEST(LiteRtLmLibTest, RunLiteRtLmWithEmptyModelPathReturnsError) {

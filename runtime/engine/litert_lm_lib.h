@@ -129,8 +129,7 @@ struct LitertLmMetrics {
   float peak_private_mb = 0.0f;
 };
 
-// Builds the content list from the given prompt view and images.
-// TODO(b/453071109): Add support for audio.
+// Builds the content list from the input data.
 absl::Status BuildContentList(const std::vector<InputData>& input_data,
                               const LiteRtLmSettings& settings,
                               nlohmann::json& content_list);
