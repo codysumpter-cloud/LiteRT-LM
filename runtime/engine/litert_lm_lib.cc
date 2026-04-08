@@ -253,17 +253,16 @@ absl::Status RunMultiTurnConversation(const LiteRtLmSettings& settings,
     if (input_prompt.empty()) {
       break;
     }
-    json content_list = json::array();
-
     // If there is an error building the content list, skip the prompt and
     // continue.
     std::vector<InputData> input_data;
     input_data.push_back(InputText(input_prompt));
-    auto status = BuildContentList(input_data, settings, content_list);
-    if (!status.ok()) {
-      std::cout << status.message() << std::endl;
+    auto content_list_or = BuildContentList(input_data, settings);
+    if (!content_list_or.ok()) {
+      std::cout << content_list_or.status().message() << std::endl;
       continue;
     }
+    const json& content_list = *content_list_or;
     if (content_list.empty()) {
       continue;
     }
@@ -639,9 +638,10 @@ SessionConfig CreateSessionConfig(const LiteRtLmSettings& settings) {
 }
 
 // TODO(b/453071109): Check if returning the content list is more appropriate.
-absl::Status BuildContentList(const std::vector<InputData>& input_data,
-                              const LiteRtLmSettings& settings,
-                              nlohmann::json& content_list) {
+absl::StatusOr<nlohmann::json> BuildContentList(
+    const std::vector<InputData>& input_data,
+    const LiteRtLmSettings& settings) {
+  nlohmann::json content_list = nlohmann::json::array();
   // We expect the media path to be in the format of [image:/path/to/image.jpg]
   // or [audio:/path/to/audio.wav]
   //
@@ -706,11 +706,14 @@ absl::Status BuildContentList(const std::vector<InputData>& input_data,
       ASSIGN_OR_RETURN(auto raw_bytes, image->GetRawImageBytes());
       content_list.push_back(
           {{"type", "image"}, {"blob", absl::Base64Escape(raw_bytes)}});
+    } else if (const auto* audio = std::get_if<InputAudio>(&data)) {
+      ASSIGN_OR_RETURN(auto raw_bytes, audio->GetRawAudioBytes());
+      content_list.push_back(
+          {{"type", "audio"}, {"blob", absl::Base64Escape(raw_bytes)}});
     }
-    // TODO(b/453071109): Add support for audio.
   }
 
-  return absl::OkStatus();
+  return content_list;
 }
 
 absl::Status RunLiteRtLm(const LiteRtLmSettings& settings,
@@ -776,10 +779,10 @@ absl::Status RunLiteRtLm(const LiteRtLmSettings& settings,
                                                  conversation.get()));
       } else {
         ABSL_LOG(INFO) << "Running single-turn conversation";
-        json content_list = json::array();
         std::vector<InputData> input_data;
         input_data.push_back(InputText(settings.input_prompt));
-        RETURN_IF_ERROR(BuildContentList(input_data, settings, content_list));
+        ASSIGN_OR_RETURN(auto content_list,
+                         BuildContentList(input_data, settings));
         RETURN_IF_ERROR(RunSingleTurnConversation(content_list, settings,
                                                   engine.get(),
                                                   conversation.get())
