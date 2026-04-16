@@ -67,9 +67,9 @@
 #include "runtime/util/lora_util.h"
 #include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  // IWYU pragma: keep
+#include "runtime/util/tensor_buffer_util.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "tflite/types/half.h"  // from @litert
-
 
 namespace litert::lm {
 namespace {
@@ -321,25 +321,6 @@ struct MaybeWrappedTensorBuffer {
   TensorBuffer buffer;
   bool wrapped;
 };
-
-template <typename T>
-absl::StatusOr<MaybeWrappedTensorBuffer> WrapOrCreateTensorBufferFromHostMemory(
-    RankedTensorType tensor_type, absl::Span<T> data) {
-  size_t size = data.size() * sizeof(T);
-  // First try to wrap the memory with a TensorBuffer.
-  auto wrapped_buffer =
-      TensorBuffer::CreateFromHostMemory(tensor_type, data.data(), size);
-  if (wrapped_buffer.HasValue()) {
-    return MaybeWrappedTensorBuffer{.buffer = std::move(*wrapped_buffer),
-                                    .wrapped = true};
-  }
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto new_buffer,
-      TensorBuffer::CreateManagedHostMemory(tensor_type, size));
-  return MaybeWrappedTensorBuffer{.buffer = std::move(new_buffer),
-                                  .wrapped = false};
-}
 
 // Returns a subspan of the given span for a chunk at the given index.
 template <typename T>
@@ -1764,8 +1745,8 @@ absl::Status LlmLiteRtCompiledModelExecutorDynamic::Prefill(
   RET_CHECK_EQ(tensor_type.Layout().Dimensions()[0], 1);
   RET_CHECK_GT(tensor_type.Layout().Dimensions()[1], 0)
       << "Prefill token ids must be non-empty.";
-  LITERT_ASSIGN_OR_RETURN(
-      absl::Span<int> ids, ReferTensorBufferAsSpan<int32_t>(*token_ids_buffer));
+  LITERT_ASSIGN_OR_RETURN(absl::Span<int> ids,
+                          ReferTensorBufferAsSpan<int32_t>(*token_ids_buffer));
 
   if (prefill_chunk_size_ <= 0) {
     return PrefillInternal(ids, params);
