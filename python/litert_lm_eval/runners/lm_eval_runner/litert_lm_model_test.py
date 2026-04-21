@@ -28,6 +28,7 @@ sys.modules["lm_eval.api.model"] = mock.MagicMock()
 sys.modules["lm_eval.api.model"].LM = object
 sys.modules["lm_eval.api.registry"] = mock.MagicMock()
 sys.modules["lm_eval.api.registry"].register_model = lambda x: lambda y: y
+sys.modules["transformers"] = mock.MagicMock()
 
 from litert_lm_eval.runners.lm_eval_runner import litert_lm_model  # pylint: disable=g-import-not-at-top
 
@@ -82,23 +83,16 @@ class LitertLmModelTest(parameterized.TestCase):
     mock_scoring_responses = mock.MagicMock()
     mock_scoring_responses.scores = [-1.5]
     mock_session.run_text_scoring.return_value = mock_scoring_responses
+
+    # Mock the session for greedy check.
+    mock_decode_responses = mock.MagicMock()
+    mock_decode_responses.texts = [" world and some more text"]
+    mock_session.run_decode.return_value = mock_decode_responses
+
     model.engine.create_session.return_value.__enter__.return_value = (
         mock_session
     )
     model.engine.create_session.return_value.__exit__.return_value = None
-
-    # Mock the conversation for greedy check.
-    mock_conversation = mock.MagicMock()
-    mock_conversation.send_message.return_value = {
-        "content": [{
-            "type": "text",
-            "text": " world and some more text",
-        }]
-    }
-    model.engine.create_conversation.return_value.__enter__.return_value = (
-        mock_conversation
-    )
-    model.engine.create_conversation.return_value.__exit__.return_value = None
 
     class MockRequest:
 
@@ -119,23 +113,16 @@ class LitertLmModelTest(parameterized.TestCase):
     mock_scoring_responses = mock.MagicMock()
     mock_scoring_responses.scores = [-3.0]
     mock_session.run_text_scoring.return_value = mock_scoring_responses
+
+    # Mock the session for greedy check.
+    mock_decode_responses = mock.MagicMock()
+    mock_decode_responses.texts = [" everyone"]
+    mock_session.run_decode.return_value = mock_decode_responses
+
     model.engine.create_session.return_value.__enter__.return_value = (
         mock_session
     )
     model.engine.create_session.return_value.__exit__.return_value = None
-
-    # Mock the conversation for greedy check.
-    mock_conversation = mock.MagicMock()
-    mock_conversation.send_message.return_value = {
-        "content": [{
-            "type": "text",
-            "text": " everyone",
-        }]
-    }
-    model.engine.create_conversation.return_value.__enter__.return_value = (
-        mock_conversation
-    )
-    model.engine.create_conversation.return_value.__exit__.return_value = None
 
     class MockRequest:
 
@@ -156,20 +143,14 @@ class LitertLmModelTest(parameterized.TestCase):
     mock_scoring_responses = mock.MagicMock()
     mock_scoring_responses.scores = [-1.5]
     mock_session.run_text_scoring.return_value = mock_scoring_responses
+
+    # Mock the session for greedy check.
+    mock_decode_responses = mock.MagicMock()
+    mock_decode_responses.texts = [" world"]
+    mock_session.run_decode.return_value = mock_decode_responses
+
     model.engine.create_session.return_value.__enter__.return_value = (
         mock_session
-    )
-
-    # Mock the conversation for greedy check.
-    mock_conversation = mock.MagicMock()
-    mock_conversation.send_message.return_value = {
-        "content": [{
-            "type": "text",
-            "text": " world",
-        }]
-    }
-    model.engine.create_conversation.return_value.__enter__.return_value = (
-        mock_conversation
     )
 
     class MockRequest:
@@ -185,14 +166,58 @@ class LitertLmModelTest(parameterized.TestCase):
 
     res = model.loglikelihood(requests)
 
-    # Only 2 unique contexts, so send_message should be called exactly twice.
-    self.assertEqual(2, mock_conversation.send_message.call_count)
+    # Only 2 unique contexts, so run_decode should be called exactly twice.
+    self.assertEqual(2, mock_session.run_decode.call_count)
     self.assertLen(res, 3)
     # The returned greedy status should match the mocked returned " world"
     # string.
     self.assertEqual((-1.5, True), res[0])
     self.assertEqual((-1.5, False), res[1])
     self.assertEqual((-1.5, True), res[2])
+
+  def test_tokenizer_name_default(self):
+    model = litert_lm_model.LitertLmModelRunner(model_path="dummy_path")
+    self.assertEqual(model.tokenizer_name, "litert_lm")
+
+  @mock.patch.object(
+      sys.modules["transformers"].AutoTokenizer, "from_pretrained"
+  )
+  def test_tokenizer_name_with_tokenizer(self, mock_from_pretrained):
+    mock_tokenizer = mock.MagicMock()
+    mock_tokenizer.name_or_path = "mock/tokenizer"
+    mock_from_pretrained.return_value = mock_tokenizer
+    model = litert_lm_model.LitertLmModelRunner(
+        model_path="dummy_path", tokenizer="mock/tokenizer"
+    )
+    self.assertEqual(model.tokenizer_name, "mock/tokenizer")
+
+  @mock.patch.object(
+      sys.modules["transformers"].AutoTokenizer, "from_pretrained"
+  )
+  def test_apply_chat_template(self, mock_from_pretrained):
+    mock_tokenizer = mock.MagicMock()
+    mock_tokenizer.apply_chat_template.return_value = "formatted prompt"
+    mock_from_pretrained.return_value = mock_tokenizer
+    model = litert_lm_model.LitertLmModelRunner(
+        model_path="dummy_path", tokenizer="mock/tokenizer"
+    )
+
+    res = model.apply_chat_template(
+        [{"role": "user", "content": "hello"}], add_generation_prompt=True
+    )
+    self.assertEqual(res, "formatted prompt")
+    mock_tokenizer.apply_chat_template.assert_called_once_with(
+        [{"role": "user", "content": "hello"}],
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+
+  def test_apply_chat_template_raises_without_tokenizer(self):
+    model = litert_lm_model.LitertLmModelRunner(model_path="dummy_path")
+    with self.assertRaisesRegex(
+        ValueError, "Tokenizer must be provided to use chat templates."
+    ):
+      model.apply_chat_template([{"role": "user", "content": "hello"}])
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ class LitertLmModelRunner(LM):
       model_path: str,
       backend: str = "CPU",
       max_num_tokens: int = 4096,
+      tokenizer: str | None = None,
       **kwargs
   ):
     super().__init__()
@@ -44,6 +45,12 @@ class LitertLmModelRunner(LM):
 
     self.backend = _BACKEND_MAP.get(backend.upper(), litert_lm.Backend.CPU)
     self.max_num_tokens = max_num_tokens
+
+    self.tokenizer = None
+    if tokenizer:
+      import transformers  # pylint: disable=g-import-not-at-top
+
+      self.tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer)
 
     self.engine = litert_lm.Engine(
         model_path=self.model_path,
@@ -124,20 +131,19 @@ class LitertLmModelRunner(LM):
     for request in requests:
       context, continuation = request.args
 
-      # Using conversation.send_message to check is_greedy is a slow workaround
+      # Using session.run_decode to check is_greedy is a slow workaround
       # since it does full generation. We should ideally get this efficiently
       # from a token-level API directly during run_text_scoring.
       if context not in cached_text_responses:
-        with self.engine.create_conversation() as conversation:
-          response = conversation.send_message(context)
-          content_list: List[Dict[str, Any]] = response.get("content", [])
+        with self.engine.create_session(apply_prompt_template=False) as session:
+          session.run_prefill([context])
+          response = session.run_decode()
           text_response = ""
-          for item in content_list:
-            if item.get("type") == "text":
-              text_response += item.get("text", "")
+          if response.texts:
+            text_response = response.texts[0]
           cached_text_responses[context] = text_response
 
-      with self.engine.create_session() as session:
+      with self.engine.create_session(apply_prompt_template=False) as session:
         session.run_prefill([context])
         scoring_responses = session.run_text_scoring([continuation])
         # We provide exactly one continuation string per request, so the engine
@@ -151,3 +157,18 @@ class LitertLmModelRunner(LM):
   def loglikelihood_rolling(self, requests: Any) -> list[float]:
     # Pending to expose per-token logprobs.
     raise NotImplementedError()
+
+  def apply_chat_template(
+      self, chat_history: list[dict[str, str]], add_generation_prompt=True
+  ) -> str:
+    if not self.tokenizer:
+      raise ValueError("Tokenizer must be provided to use chat templates.")
+    return self.tokenizer.apply_chat_template(
+        chat_history,
+        tokenize=False,
+        add_generation_prompt=add_generation_prompt,
+    )
+
+  @property
+  def tokenizer_name(self) -> str:
+    return self.tokenizer.name_or_path if self.tokenizer else "litert_lm"

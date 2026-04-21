@@ -26,6 +26,9 @@ sys.modules[
 ] = mock.MagicMock()
 mock_lm_eval = mock.MagicMock()
 sys.modules["lm_eval"] = mock_lm_eval
+
+mock_lm_eval_tasks = mock.MagicMock()
+sys.modules["lm_eval.tasks"] = mock_lm_eval_tasks
 sys.modules["lm_eval.api"] = mock_lm_eval.api
 sys.modules["lm_eval.api.model"] = mock_lm_eval.api.model
 sys.modules["lm_eval.api.model"].LM = object
@@ -65,6 +68,7 @@ class LitertLmEvalTest(parameterized.TestCase):
         tasks=["mmlu"],
         num_fewshot=None,
         limit=None,
+        apply_chat_template=False,
     )
 
   @mock.patch.object(
@@ -91,6 +95,62 @@ class LitertLmEvalTest(parameterized.TestCase):
         tasks=["mmlu"],
         num_fewshot=None,
         limit=None,
+        apply_chat_template=False,
+    )
+
+  @mock.patch.object(
+      sys,
+      "argv",
+      [
+          "litert_lm_eval.py",
+          "--model_path",
+          "test_model.tflite",
+          "--tasks",
+          "mmlu",
+          "--apply_chat_template",
+          "True",
+      ],
+  )
+  def test_main_lm_eval_with_chat_template(self):
+    mock_lm_eval.simple_evaluate.return_value = {"results": {"mmlu": 0.5}}
+
+    litert_lm_eval.main()
+
+    # mmlu is a scoring task so it forwards apply_chat_template=True
+    mock_lm_eval.simple_evaluate.assert_called_once_with(
+        model="litert_lm",
+        model_args="model_path=test_model.tflite,backend=CPU",
+        tasks=["mmlu"],
+        num_fewshot=None,
+        limit=None,
+        apply_chat_template=True,
+    )
+
+  @mock.patch.object(
+      sys,
+      "argv",
+      [
+          "litert_lm_eval.py",
+          "--model_path",
+          "test_model.tflite",
+          "--tasks",
+          "mmlu",
+          "--tokenizer",
+          "google/gemma-2b-it",
+      ],
+  )
+  def test_main_lm_eval_with_tokenizer(self):
+    mock_lm_eval.simple_evaluate.return_value = {"results": {"mmlu": 0.5}}
+
+    litert_lm_eval.main()
+
+    mock_lm_eval.simple_evaluate.assert_called_once_with(
+        model="litert_lm",
+        model_args="model_path=test_model.tflite,backend=CPU,tokenizer=google/gemma-2b-it",
+        tasks=["mmlu"],
+        num_fewshot=None,
+        limit=None,
+        apply_chat_template=False,
     )
 
 

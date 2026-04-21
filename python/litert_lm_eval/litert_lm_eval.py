@@ -39,11 +39,27 @@ Usage example:
 import argparse
 import json
 import sys
+from typing import Any
 
 import lm_eval
+import lm_eval.tasks
 
 from litert_lm_eval import utils
 from litert_lm_eval.runners.lm_eval_runner import litert_lm_model  # pylint: disable=unused-import
+
+# Keys used to merge the evaluation results from separate scoring and sampling
+# runs.
+_EVAL_RESULT_KEYS = (
+    "results",
+    "groups",
+    "group_subtasks",
+    "configs",
+    "versions",
+    "n-shot",
+    "higher_is_better",
+    "n-samples",
+    "samples",
+)
 
 
 def main():
@@ -78,6 +94,12 @@ def main():
       default=None,
       help="Limit examples per task (integer count or fraction).",
   )
+  parser.add_argument(
+      "--tokenizer",
+      type=str,
+      default=None,
+      help="Optional path or name of the tokenizer to use.",
+  )
 
   # Escape hatch
   parser.add_argument(
@@ -96,11 +118,69 @@ def main():
       default=None,
       help="Path to save the evaluation results as a JSON file.",
   )
+  parser.add_argument(
+      "--apply_chat_template",
+      type=lambda x: str(x).lower() in ("true", "1", "yes"),
+      default=False,
+      help=(
+          "Specifies whether to apply a chat template to the prompt. Note: This"
+          " is only useful for scoring tasks, and requires the --tokenizer flag"
+          " to be provided. For sampling/generation tasks, a chat template is"
+          " intrinsically applied by default via the LiteRT LM runner."
+      ),
+  )
 
   args, unknown = parser.parse_known_args()
 
+  def _is_generate_until_task(task_dict: dict[str, Any]) -> bool:
+    """Recursively checks if any task in task_dict is a 'generate_until' task.
+
+    Args:
+      task_dict: A nested dictionary of task objects.
+
+    Returns:
+      True if the output type is 'generate_until', False otherwise.
+    """
+    for _, task_obj in task_dict.items():
+      if isinstance(task_obj, dict):
+        if _is_generate_until_task(task_obj):
+          return True
+      else:
+        if task_obj.get_config("output_type") == "generate_until":
+          return True
+    return False
+
+  def _merge_results(base_results, new_results):
+    """Merges evaluation results from two separate runs.
+
+    This is necessary because scoring tasks and sampling tasks are evaluated in
+    separate `lm_eval.simple_evaluate` calls and must be combined.
+
+    Args:
+      base_results: The initial results dictionary (can be None).
+      new_results: The results dictionary to merge into base_results.
+
+    Returns:
+      A unified dictionary containing the merged results.
+    """
+    if not base_results:
+      return new_results
+    if not new_results:
+      return base_results
+
+    merged = base_results.copy()
+    for key in _EVAL_RESULT_KEYS:
+      if key in new_results:
+        if key not in merged:
+          merged[key] = {}
+        merged[key].update(new_results[key])
+    return merged
+
   # Construct the model_args string required by lm_eval.
   model_args_str = f"model_path={args.model_path},backend={args.backend}"
+
+  if args.tokenizer:
+    model_args_str += f",tokenizer={args.tokenizer}"
 
   if args.framework_args:
     model_args_str += f",{args.framework_args}"
@@ -110,16 +190,57 @@ def main():
   # Parse unknown args into kwargs for simple_evaluate.
   kwargs = utils.parse_unknown_args(unknown)
 
-  print(f"Running evaluation with model 'litert_lm' on tasks: {tasks}")
+  task_manager = lm_eval.tasks.TaskManager()
+  scoring_tasks = []
+  sampling_tasks = []
 
-  results = lm_eval.simple_evaluate(
-      model="litert_lm",
-      model_args=model_args_str,
-      tasks=tasks,
-      num_fewshot=args.num_fewshot,
-      limit=args.limit,
-      **kwargs,  # Pass any remaining flags.
-  )
+  for task_name in tasks:
+    t_dict = lm_eval.tasks.get_task_dict([task_name], task_manager)
+    if _is_generate_until_task(t_dict):
+      sampling_tasks.append(task_name)
+    else:
+      scoring_tasks.append(task_name)
+
+  results = None
+
+  if scoring_tasks:
+    print(
+        "Running evaluation with model 'litert_lm' on scoring tasks:"
+        f" {scoring_tasks}"
+    )
+    scoring_results = lm_eval.simple_evaluate(
+        model="litert_lm",
+        model_args=model_args_str,
+        tasks=scoring_tasks,
+        num_fewshot=args.num_fewshot,
+        limit=args.limit,
+        apply_chat_template=args.apply_chat_template,
+        **kwargs,  # Pass any remaining flags.
+    )
+    results = _merge_results(results, scoring_results)
+
+  if sampling_tasks:
+    print(
+        "Running evaluation with model 'litert_lm' on sampling tasks:"
+        f" {sampling_tasks}"
+    )
+    # Force apply_chat_template=False for sampling tasks because the litert_lm
+    # model runner already applies chat templates internally via the
+    # Conversation API. Enabling it on the pipeline might result in
+    # double-templating.
+    sampling_kwargs = kwargs.copy()
+    sampling_kwargs.pop("apply_chat_template", None)
+
+    sampling_results = lm_eval.simple_evaluate(
+        model="litert_lm",
+        model_args=model_args_str,
+        tasks=sampling_tasks,
+        num_fewshot=args.num_fewshot,
+        limit=args.limit,
+        apply_chat_template=False,
+        **sampling_kwargs,  # Pass any remaining flags.
+    )
+    results = _merge_results(results, sampling_results)
 
   if results is not None:
     print(json.dumps(results["results"], indent=2, default=str))
