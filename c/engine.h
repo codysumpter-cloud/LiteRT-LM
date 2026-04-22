@@ -56,6 +56,32 @@ typedef struct LiteRtLmConversation LiteRtLmConversation;
 // Opaque pointer for a JSON response.
 typedef struct LiteRtLmJsonResponse LiteRtLmJsonResponse;
 
+// Opaque pointer for a detokenize result.
+// Use `litert_lm_detokenize_result_delete` to free memory.
+typedef struct LiteRtLmDetokenizeResult LiteRtLmDetokenizeResult;
+
+// Opaque pointer for a tokenize result.
+// Use `litert_lm_tokenize_result_delete` to free memory.
+typedef struct LiteRtLmTokenizeResult LiteRtLmTokenizeResult;
+
+// Represents the type of a TokenUnion.
+typedef enum {
+  kLiteRtLmTokenUnionTypeString = 0,
+  kLiteRtLmTokenUnionTypeIds = 1,
+} LiteRtLmTokenUnionType;
+
+// Opaque pointer for LiteRT LM Token Union.
+// Represents a single start or stop token, which could be either a string or a
+// sequence of token ids.
+// Use `litert_lm_token_union_delete` to free memory.
+typedef struct LiteRtLmTokenUnion LiteRtLmTokenUnion;
+
+// Opaque pointer for LiteRT LM Token Unions.
+// Represents a collection of TokenUnion, typically used for model stop
+// conditions.
+// Use `litert_lm_token_unions_delete` to free memory.
+typedef struct LiteRtLmTokenUnions LiteRtLmTokenUnions;
+
 // Opaque pointer for LiteRT LM Session Config.
 typedef struct LiteRtLmSessionConfig LiteRtLmSessionConfig;
 
@@ -593,6 +619,147 @@ void litert_lm_conversation_cancel_process(LiteRtLmConversation* conversation);
 LITERT_LM_C_API_EXPORT
 LiteRtLmBenchmarkInfo* litert_lm_conversation_get_benchmark_info(
     LiteRtLmConversation* conversation);
+
+// Tokenizes text using the engine's tokenizer.
+//
+// @param engine The engine instance.
+// @param text The UTF-8 string to tokenize.
+// @return A pointer to the tokenize result, or NULL on failure.
+//   The caller is responsible for deleting the result using
+//   `litert_lm_tokenize_result_delete`.
+LITERT_LM_C_API_EXPORT
+LiteRtLmTokenizeResult* litert_lm_engine_tokenize(LiteRtLmEngine* engine,
+                                                  const char* text);
+
+// Destroys a LiteRT LM Tokenize Result.
+//
+// @param result The tokenize result to destroy.
+LITERT_LM_C_API_EXPORT
+void litert_lm_tokenize_result_delete(LiteRtLmTokenizeResult* result);
+
+// Returns the token ids from a tokenize result.
+//
+// @param result The tokenize result.
+// @return A pointer to the internal array of token ids. The returned pointer
+//   is valid only for the lifetime of the `result` object.
+LITERT_LM_C_API_EXPORT
+const int* litert_lm_tokenize_result_get_tokens(
+    const LiteRtLmTokenizeResult* result);
+
+// Returns the number of token ids from a tokenize result.
+//
+// @param result The tokenize result.
+// @return The number of token ids.
+LITERT_LM_C_API_EXPORT
+size_t litert_lm_tokenize_result_get_num_tokens(
+    const LiteRtLmTokenizeResult* result);
+
+// Detokenizes token ids using the engine's tokenizer.
+//
+// @param engine The engine instance.
+// @param tokens An array of token ids to detokenize.
+// @param num_tokens The number of token ids in the array.
+// @return A pointer to the detokenize result, or NULL on failure.
+//   The caller is responsible for deleting the result using
+//   `litert_lm_detokenize_result_delete`.
+LITERT_LM_C_API_EXPORT
+LiteRtLmDetokenizeResult* litert_lm_engine_detokenize(LiteRtLmEngine* engine,
+                                                      const int* tokens,
+                                                      size_t num_tokens);
+
+// Destroys a LiteRT LM Detokenize Result.
+//
+// @param result The detokenize result to destroy.
+LITERT_LM_C_API_EXPORT
+void litert_lm_detokenize_result_delete(LiteRtLmDetokenizeResult* result);
+
+// Returns the string from a detokenize result.
+//
+// @param result The detokenize result.
+// @return The detokenized UTF-8 string. The returned string is owned by the
+//   `result` object and is valid only for its lifetime.
+LITERT_LM_C_API_EXPORT
+const char* litert_lm_detokenize_result_get_string(
+    const LiteRtLmDetokenizeResult* result);
+
+// Destroys a LiteRT LM Token Union.
+//
+// @param token_union The token union to destroy.
+LITERT_LM_C_API_EXPORT
+void litert_lm_token_union_delete(LiteRtLmTokenUnion* token_union);
+
+// Returns the type of the token union.
+//
+// @param token_union The token union.
+// @return The type of the token union.
+LITERT_LM_C_API_EXPORT
+LiteRtLmTokenUnionType litert_lm_token_union_get_type(
+    const LiteRtLmTokenUnion* token_union);
+
+// Returns the string value from a token union.
+//
+// @param token_union The token union.
+// @return The string value, or NULL if the type is not
+//   kLiteRtLmTokenUnionTypeString. The returned string is owned by the
+//   `token_union` object and is valid only for its lifetime.
+LITERT_LM_C_API_EXPORT
+const char* litert_lm_token_union_get_string(
+    const LiteRtLmTokenUnion* token_union);
+
+// Returns the token ids from a token union.
+//
+// @param token_union The token union.
+// @param out_tokens A pointer to receive the internal array of token ids.
+//   The received pointer is valid only for the lifetime of the `token_union`
+//   object.
+// @param out_num_tokens A pointer to receive the number of token ids.
+// @return 0 on success, non-zero if the type is not kLiteRtLmTokenUnionTypeIds.
+LITERT_LM_C_API_EXPORT
+int litert_lm_token_union_get_ids(const LiteRtLmTokenUnion* token_union,
+                                  const int** out_tokens,
+                                  size_t* out_num_tokens);
+
+// Destroys a LiteRT LM Token Unions object.
+//
+// @param tokens The token unions object to destroy.
+LITERT_LM_C_API_EXPORT
+void litert_lm_token_unions_delete(LiteRtLmTokenUnions* tokens);
+
+// Returns the number of token unions in the collection.
+//
+// @param tokens The token unions object.
+// @return The number of token unions.
+LITERT_LM_C_API_EXPORT
+size_t litert_lm_token_unions_get_num_tokens(const LiteRtLmTokenUnions* tokens);
+
+// Returns the token union at a given index from a collection.
+//
+// @param tokens The token unions collection.
+// @param index The index of the token union.
+// @return A pointer to the token union at the given index, or NULL if the index
+//   is out of bounds. The returned pointer is owned by the `tokens` object and
+//   is valid only for its lifetime. The caller MUST NOT delete it.
+LITERT_LM_C_API_EXPORT
+const LiteRtLmTokenUnion* litert_lm_token_unions_get_token_at(
+    const LiteRtLmTokenUnions* tokens, size_t index);
+
+// Returns the configured start token (BOS), if any.
+//
+// @param engine The engine instance.
+// @return A pointer to the start token, or NULL if none configured. The caller
+//   is responsible for deleting the result using
+//   `litert_lm_token_union_delete`.
+LITERT_LM_C_API_EXPORT
+LiteRtLmTokenUnion* litert_lm_engine_get_start_token(LiteRtLmEngine* engine);
+
+// Returns the configured stop tokens (EOS).
+//
+// @param engine The engine instance.
+// @return A pointer to the stop tokens collection, or NULL if none configured.
+//   The caller is responsible for deleting the result using
+//   `litert_lm_token_unions_delete`.
+LITERT_LM_C_API_EXPORT
+LiteRtLmTokenUnions* litert_lm_engine_get_stop_tokens(LiteRtLmEngine* engine);
 
 #ifdef __cplusplus
 }  // extern "C"

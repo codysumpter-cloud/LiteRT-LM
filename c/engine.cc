@@ -38,7 +38,9 @@
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/llm_executor_settings.h"
+#include "runtime/proto/llm_metadata.pb.h"
 #include "runtime/proto/sampler_params.pb.h"
+#include "runtime/proto/token.pb.h"
 #include "runtime/util/logging.h"
 
 namespace {
@@ -175,6 +177,22 @@ struct LiteRtLmSessionConfig {
 
 struct LiteRtLmConversationConfig {
   std::unique_ptr<ConversationConfig> config;
+};
+
+struct LiteRtLmDetokenizeResult {
+  std::string text;
+};
+
+struct LiteRtLmTokenizeResult {
+  std::vector<int> tokens;
+};
+
+struct LiteRtLmTokenUnion {
+  litert::lm::proto::TokenUnion token_union;
+};
+
+struct LiteRtLmTokenUnions {
+  std::vector<litert::lm::proto::TokenUnion> tokens;
 };
 
 extern "C" {
@@ -871,6 +889,147 @@ LiteRtLmBenchmarkInfo* litert_lm_conversation_get_benchmark_info(
     return nullptr;
   }
   return new LiteRtLmBenchmarkInfo{std::move(*benchmark_info)};
+}
+
+LiteRtLmTokenizeResult* litert_lm_engine_tokenize(LiteRtLmEngine* engine,
+                                                  const char* text) {
+  if (!engine || !engine->engine || !text) {
+    return nullptr;
+  }
+  const auto& tokenizer = engine->engine->GetTokenizer();
+  auto token_ids =
+      const_cast<litert::lm::Tokenizer&>(tokenizer).TextToTokenIds(text);
+  if (!token_ids.ok()) {
+    ABSL_LOG(ERROR) << "Failed to tokenize: " << token_ids.status();
+    return nullptr;
+  }
+  return new LiteRtLmTokenizeResult{std::move(*token_ids)};
+}
+
+void litert_lm_tokenize_result_delete(LiteRtLmTokenizeResult* result) {
+  delete result;
+}
+
+const int* litert_lm_tokenize_result_get_tokens(
+    const LiteRtLmTokenizeResult* result) {
+  if (!result) {
+    return nullptr;
+  }
+  return result->tokens.data();
+}
+
+size_t litert_lm_tokenize_result_get_num_tokens(
+    const LiteRtLmTokenizeResult* result) {
+  if (!result) {
+    return 0;
+  }
+  return result->tokens.size();
+}
+
+LiteRtLmDetokenizeResult* litert_lm_engine_detokenize(LiteRtLmEngine* engine,
+                                                      const int* tokens,
+                                                      size_t num_tokens) {
+  if (!engine || !engine->engine || !tokens) {
+    return nullptr;
+  }
+  const auto& tokenizer = engine->engine->GetTokenizer();
+  std::vector<int> token_ids(tokens, tokens + num_tokens);
+  auto text =
+      const_cast<litert::lm::Tokenizer&>(tokenizer).TokenIdsToText(token_ids);
+  if (!text.ok()) {
+    ABSL_LOG(ERROR) << "Failed to detokenize: " << text.status();
+    return nullptr;
+  }
+  return new LiteRtLmDetokenizeResult{std::move(*text)};
+}
+
+void litert_lm_detokenize_result_delete(LiteRtLmDetokenizeResult* result) {
+  delete result;
+}
+
+const char* litert_lm_detokenize_result_get_string(
+    const LiteRtLmDetokenizeResult* result) {
+  if (!result) {
+    return nullptr;
+  }
+  return result->text.c_str();
+}
+
+void litert_lm_token_union_delete(LiteRtLmTokenUnion* token_union) {
+  delete token_union;
+}
+
+LiteRtLmTokenUnionType litert_lm_token_union_get_type(
+    const LiteRtLmTokenUnion* token_union) {
+  if (token_union && token_union->token_union.has_token_str()) {
+    return kLiteRtLmTokenUnionTypeString;
+  }
+  return kLiteRtLmTokenUnionTypeIds;
+}
+
+const char* litert_lm_token_union_get_string(
+    const LiteRtLmTokenUnion* token_union) {
+  if (token_union && token_union->token_union.has_token_str()) {
+    return token_union->token_union.token_str().c_str();
+  }
+  return nullptr;
+}
+
+int litert_lm_token_union_get_ids(const LiteRtLmTokenUnion* token_union,
+                                  const int** out_tokens,
+                                  size_t* out_num_tokens) {
+  if (!token_union || !token_union->token_union.has_token_ids() ||
+      !out_tokens || !out_num_tokens) {
+    return -1;
+  }
+  *out_tokens = token_union->token_union.token_ids().ids().data();
+  *out_num_tokens = token_union->token_union.token_ids().ids_size();
+  return 0;
+}
+
+void litert_lm_token_unions_delete(LiteRtLmTokenUnions* tokens) {
+  delete tokens;
+}
+
+size_t litert_lm_token_unions_get_num_tokens(
+    const LiteRtLmTokenUnions* tokens) {
+  if (!tokens) {
+    return 0;
+  }
+  return tokens->tokens.size();
+}
+
+const LiteRtLmTokenUnion* litert_lm_token_unions_get_token_at(
+    const LiteRtLmTokenUnions* tokens, size_t index) {
+  if (!tokens || index >= tokens->tokens.size()) {
+    return nullptr;
+  }
+  return reinterpret_cast<const LiteRtLmTokenUnion*>(&tokens->tokens[index]);
+}
+
+LiteRtLmTokenUnion* litert_lm_engine_get_start_token(LiteRtLmEngine* engine) {
+  if (!engine || !engine->engine) {
+    return nullptr;
+  }
+  const auto& metadata = engine->engine->GetEngineSettings().GetLlmMetadata();
+  if (!metadata.has_value() || !metadata->has_start_token()) {
+    return nullptr;
+  }
+  return new LiteRtLmTokenUnion{metadata->start_token()};
+}
+
+LiteRtLmTokenUnions* litert_lm_engine_get_stop_tokens(LiteRtLmEngine* engine) {
+  if (!engine || !engine->engine) {
+    return nullptr;
+  }
+  const auto& metadata = engine->engine->GetEngineSettings().GetLlmMetadata();
+  if (!metadata.has_value() || metadata->stop_tokens_size() == 0) {
+    return nullptr;
+  }
+  auto* c_tokens = new LiteRtLmTokenUnions;
+  c_tokens->tokens.assign(metadata->stop_tokens().begin(),
+                          metadata->stop_tokens().end());
+  return c_tokens;
 }
 
 }  // extern "C"

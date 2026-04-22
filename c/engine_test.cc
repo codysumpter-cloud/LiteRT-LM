@@ -61,6 +61,17 @@ using SessionConfigPtr =
 using ConversationConfigPtr =
     std::unique_ptr<LiteRtLmConversationConfig,
                     decltype(&litert_lm_conversation_config_delete)>;
+using TokenizeResultPtr =
+    std::unique_ptr<LiteRtLmTokenizeResult,
+                    decltype(&litert_lm_tokenize_result_delete)>;
+using DetokenizeResultPtr =
+    std::unique_ptr<LiteRtLmDetokenizeResult,
+                    decltype(&litert_lm_detokenize_result_delete)>;
+using TokenUnionPtr = std::unique_ptr<LiteRtLmTokenUnion,
+                                      decltype(&litert_lm_token_union_delete)>;
+using TokenUnionsPtr =
+    std::unique_ptr<LiteRtLmTokenUnions,
+                    decltype(&litert_lm_token_unions_delete)>;
 
 TEST(EngineCTest, CreateSettingsWithNoVisionAndAudioBackend) {
   const std::string task_path = "test_model_path_1";
@@ -579,6 +590,73 @@ TEST(EngineCTest, CreateConversationConfigWithNoSystemMessage) {
   const auto& preface = std::get<litert::lm::JsonPreface>(
       conversation_config->config->GetPreface());
   EXPECT_EQ(preface.messages, nullptr);
+}
+
+TEST(EngineCTest, TokenizerTest) {
+  const std::string task_path = GetTestdataPath(
+      "litert_lm/runtime/testdata/test_lm.litertlm");
+  EngineSettingsPtr settings(litert_lm_engine_settings_create(
+                                 task_path.c_str(), "cpu", nullptr, nullptr),
+                             &litert_lm_engine_settings_delete);
+  ASSERT_NE(settings, nullptr);
+
+  EnginePtr engine(litert_lm_engine_create(settings.get()),
+                   &litert_lm_engine_delete);
+  ASSERT_NE(engine, nullptr);
+
+  const char* text = "hello";
+  TokenizeResultPtr tokenize_result(
+      litert_lm_engine_tokenize(engine.get(), text),
+      &litert_lm_tokenize_result_delete);
+  ASSERT_NE(tokenize_result, nullptr);
+  size_t num_tokens =
+      litert_lm_tokenize_result_get_num_tokens(tokenize_result.get());
+  EXPECT_GT(num_tokens, 0);
+
+  const int* tokens =
+      litert_lm_tokenize_result_get_tokens(tokenize_result.get());
+  DetokenizeResultPtr detokenize_result(
+      litert_lm_engine_detokenize(engine.get(), tokens, num_tokens),
+      &litert_lm_detokenize_result_delete);
+  ASSERT_NE(detokenize_result, nullptr);
+  EXPECT_STREQ(litert_lm_detokenize_result_get_string(detokenize_result.get()),
+               text);
+
+  TokenUnionPtr start_token(litert_lm_engine_get_start_token(engine.get()),
+                            &litert_lm_token_union_delete);
+  if (start_token != nullptr) {
+    if (litert_lm_token_union_get_type(start_token.get()) ==
+        kLiteRtLmTokenUnionTypeIds) {
+      const int* ids;
+      size_t num_ids;
+      EXPECT_EQ(
+          litert_lm_token_union_get_ids(start_token.get(), &ids, &num_ids), 0);
+      EXPECT_GT(num_ids, 0);
+    } else {
+      EXPECT_NE(litert_lm_token_union_get_string(start_token.get()), nullptr);
+    }
+  }
+
+  TokenUnionsPtr stop_tokens(litert_lm_engine_get_stop_tokens(engine.get()),
+                             &litert_lm_token_unions_delete);
+  if (stop_tokens != nullptr) {
+    size_t num_tokens =
+        litert_lm_token_unions_get_num_tokens(stop_tokens.get());
+    for (size_t i = 0; i < num_tokens; ++i) {
+      const LiteRtLmTokenUnion* stop_token =
+          litert_lm_token_unions_get_token_at(stop_tokens.get(), i);
+      ASSERT_NE(stop_token, nullptr);
+      if (litert_lm_token_union_get_type(stop_token) ==
+          kLiteRtLmTokenUnionTypeIds) {
+        const int* ids;
+        size_t num_ids;
+        EXPECT_EQ(litert_lm_token_union_get_ids(stop_token, &ids, &num_ids), 0);
+        EXPECT_GT(num_ids, 0);
+      } else {
+        EXPECT_NE(litert_lm_token_union_get_string(stop_token), nullptr);
+      }
+    }
+  }
 }
 
 TEST(EngineCTest, GenerateContent) {
