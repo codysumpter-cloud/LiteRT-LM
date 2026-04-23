@@ -42,6 +42,7 @@
 #include "runtime/executor/llm_executor_settings.h"
 #include "runtime/proto/sampler_params.pb.h"
 #include "runtime/util/logging.h"
+#include "schema/capabilities/capabilities_c.h"
 #include "tflite/logger.h"  // from @litert
 #include "tflite/minimal_logging.h"  // from @litert
 
@@ -1094,6 +1095,35 @@ LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(
   }
 
   return NewStringStandardUTF(env, *response);
+}
+
+LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateCapabilities)(
+    JNIEnv* env, jclass thiz, jstring model_path) {
+  const char* model_path_chars = env->GetStringUTFChars(model_path, nullptr);
+  std::string model_path_str(model_path_chars);
+  env->ReleaseStringUTFChars(model_path, model_path_chars);
+
+  auto loaded_file = litert_lm_loaded_file_create(model_path_str.c_str());
+  if (loaded_file == nullptr) {
+    ThrowLiteRtLmJniException(
+        env, "Failed to open LiteRT-LM file: " + model_path_str);
+    return 0;
+  }
+
+  return reinterpret_cast<jlong>(loaded_file);
+}
+
+LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeDeleteCapabilities)(
+    JNIEnv* env, jclass thiz, jlong capabilities_pointer) {
+  litert_lm_loaded_file_delete(
+      reinterpret_cast<LiteRtLmLoadedFile*>(capabilities_pointer));
+}
+
+LITERTLM_JNIEXPORT jboolean JNICALL
+JNI_METHOD(nativeHasSpeculativeDecodingSupport)(JNIEnv* env, jclass thiz,
+                                                jlong capabilities_pointer) {
+  return litert_lm_loaded_file_has_speculative_decoding_support(
+      reinterpret_cast<LiteRtLmLoadedFile*>(capabilities_pointer));
 }
 
 }  // extern "C"

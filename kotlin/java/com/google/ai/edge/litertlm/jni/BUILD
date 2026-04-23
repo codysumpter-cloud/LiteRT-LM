@@ -46,6 +46,7 @@ cc_binary(
         "//runtime/executor:llm_executor_settings",
         "//runtime/proto:sampler_params_cc_proto",
         "//runtime/util:logging",
+        "//schema/capabilities:capabilities_c",
         "@litert//tflite:minimal_logging",
     ] + select({
         "@platforms//os:android": [],

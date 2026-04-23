@@ -31,6 +31,15 @@ cc_library(
 )
 
 cc_library(
+    name = "capabilities_c",
+    srcs = ["capabilities_c.cc"],
+    hdrs = ["capabilities_c.h"],
+    deps = [
+        ":capabilities",
+    ],
+)
+
+cc_library(
     name = "speculative_decoding",
     srcs = ["speculative_decoding.cc"],
     hdrs = ["speculative_decoding.h"],

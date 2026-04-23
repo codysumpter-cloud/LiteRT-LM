@@ -307,4 +307,13 @@ internal object LiteRtLmJni {
    * @param logSeverity The minimum log level to set. See [LogSeverity].
    */
   external fun nativeSetMinLogSeverity(logSeverity: Int)
+
+  /** Loads a LiteRT-LM file from the given path for capability queries. */
+  external fun nativeCreateCapabilities(modelPath: String): Long
+
+  /** Deletes a loaded LiteRT-LM file. */
+  external fun nativeDeleteCapabilities(capabilitiesPointer: Long)
+
+  /** Returns true if the loaded LiteRT-LM file supports speculative decoding. */
+  external fun nativeHasSpeculativeDecodingSupport(capabilitiesPointer: Long): Boolean
 }
