@@ -15,6 +15,6 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LM_SCHEMA_CAPABILITIES_CAPABILITIES_H_
 #define THIRD_PARTY_ODML_LITERT_LM_SCHEMA_CAPABILITIES_CAPABILITIES_H_
 
-#include "schema/capabilities/speculative_decoding.h"  // IWYU pragma: keep
+#include "schema/capabilities/speculative_decoding.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LM_SCHEMA_CAPABILITIES_CAPABILITIES_H_
