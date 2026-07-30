@@ -1,6 +1,8 @@
 name: Sync fork from upstream
 
 on:
+  schedule:
+    - cron: '17 13 * * *'
   workflow_dispatch:
 
 permissions:
@@ -8,12 +10,11 @@ permissions:
 
 concurrency:
   group: sync-fork-upstream
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
     steps:
       - name: Sync default branch from upstream
         env:
@@ -34,8 +35,8 @@ jobs:
           if [ "$status" = "200" ]; then
             echo "Upstream sync complete."
           elif [ "$status" = "409" ] || [ "$status" = "422" ]; then
-            echo "::notice title=Fork sync needs manual resolution::GitHub returned status $status for $REPO. No retry was scheduled."
-            exit 0
+            echo "Upstream sync needs manual resolution (status $status)." >&2
+            exit 1
           else
             echo "Unexpected response: $status" >&2
             exit 1
